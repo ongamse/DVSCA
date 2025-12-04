@@ -15,33 +15,50 @@ permissions:
 jobs:
   NextGen-Static-Analysis:
     runs-on: ubuntu-latest
+
     steps:
-    - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-    - name: Setup Java JDK v11
-      uses: actions/setup-java@v3
-      with:
-        distribution: zulu
-        java-version: 11
+      - name: Setup Java JDK v11
+        uses: actions/setup-java@v3
+        with:
+          distribution: zulu
+          java-version: 11
 
-    - name: Download Qwiet CLI
-      run: |
-        curl https://cdn.shiftleft.io/download/sl > ${GITHUB_WORKSPACE}/sl && chmod a+rx ${GITHUB_WORKSPACE}/sl /
-        mvn clean install /
-        mvn install:install-file \
-          -Dfile=target/xz-java-1.9.2.jar \
-          -DgroupId=org.tukaani \
-          -DartifactId=xz \
-          -Dversion=1.9.2-malicious \
-          -Dpackaging=jar
+      # Run Maven *before* downloading Qwiet CLI
+      - name: Maven build
+        run: mvn clean install
 
-    - name: Extract branch name
-      shell: bash
-      run: echo "##[set-output name=branch;]$(echo ${GITHUB_REF#refs/heads/})"
-      id: extract_branch
+      - name: Install malicious JAR into local Maven repo
+        run: |
+          mvn install:install-file \
+            -Dfile=target/xz-java-1.9.2.jar \
+            -DgroupId=org.tukaani \
+            -DartifactId=xz \
+            -Dversion=1.9.2-malicious \
+            -Dpackaging=jar
 
-    - name: preZero NextGen Static Analysis
-      run: ${GITHUB_WORKSPACE}/sl analyze --strict --app DVSCA --wait --verbose --tag branch=${{ github.head_ref || steps.extract_branch.outputs.branch }}
-      #--container 18fgsa/s3-resource
-      env:
-        SHIFTLEFT_ACCESS_TOKEN: ${{ secrets.SHIFTLEFT_ACCESS_TOKEN }}
+      - name: Download Qwiet CLI
+        run: |
+          curl -sSL https://cdn.shiftleft.io/download/sl -o "${GITHUB_WORKSPACE}/sl"
+          chmod a+rx "${GITHUB_WORKSPACE}/sl"
+
+      - name: Extract branch name
+        id: extract_branch
+        shell: bash
+        run: |
+          # Use head ref for PRs, fall back to branch name for other events
+          BRANCH_NAME="${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}"
+          echo "branch=${BRANCH_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: preZero NextGen Static Analysis
+        run: |
+          "${GITHUB_WORKSPACE}/sl" analyze \
+            --strict \
+            --app DVSCA \
+            --wait \
+            --verbose \
+            --tag "branch=${{ github.head_ref || steps.extract_branch.outputs.branch }}"
+        env:
+          SHIFTLEFT_ACCESS_TOKEN: ${{ secrets.SHIFTLEFT_ACCESS_TOKEN }}
