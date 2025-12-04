@@ -26,11 +26,13 @@ jobs:
           distribution: zulu
           java-version: 11
 
-      # Run Maven *before* downloading Qwiet CLI
+      # Run Maven in the xz-java-malicious subdirectory
       - name: Maven build
+        working-directory: ./xz-java-malicious
         run: mvn clean install
 
       - name: Install malicious JAR into local Maven repo
+        working-directory: ./xz-java-malicious
         run: |
           mvn install:install-file \
             -Dfile=target/xz-java-1.9.2.jar \
